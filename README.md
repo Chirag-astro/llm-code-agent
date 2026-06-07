@@ -1,34 +1,53 @@
-[![progress-banner](https://backend.codecrafters.io/progress/claude-code/a32f66f0-a9b6-4b2e-8e2d-e5e1ea3fc334)](https://app.codecrafters.io/users/Chirag-astro?r=2qF)
+# LLM-Code-Agent
 
-This is a starting point for Python solutions to the
-["Build Your own Claude Code" Challenge](https://codecrafters.io/challenges/claude-code).
+A terminal-based AI coding agent built in Python using OpenRouter and tool calling.
 
-Claude Code is an AI coding assistant that uses Large Language Models (LLMs) to
-understand code and perform actions through tool calls. In this challenge,
-you'll build your own Claude Code from scratch by implementing an LLM-powered
-coding assistant.
+The project implements the core architecture behind modern coding assistants: an LLM-driven agent loop capable of interacting with its environment through tools. The agent can reason about tasks, invoke tools when needed, process the results, and continue iterating until it produces a final response.
 
-Along the way you'll learn about HTTP RESTful APIs, OpenAI-compatible tool
-calling, agent loop, and how to integrate multiple tools into an AI assistant.
+## Features
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+* Agent loop implementation
+* OpenRouter integration
+* Read tool (read file contents)
+* Write tool (create and modify files)
+* Bash tool (execute shell commands)
+* Multi-step tool execution
+* Conversation history management
 
-# Passing the first stage
+## Architecture
 
-The entry point for your `claude-code` implementation is in `app/main.py`. Study
-and uncomment the relevant code, and submit to pass the first stage:
+The agent follows a simple reasoning cycle:
 
-```sh
-codecrafters submit
-```
+User Prompt → LLM → Tool Call → Tool Execution → Tool Result → LLM → Final Response
 
-# Stage 2 & beyond
+This allows the model to gather information, perform actions, and solve tasks that require multiple steps.
 
-Note: This section is for stages 2 and beyond.
+## Technologies
 
-1. Ensure you have `uv` installed locally.
-2. Run `./your_program.sh` to run your program, which is implemented in
-   `app/main.py`.
-3. Run `codecrafters submit` to submit your solution to CodeCrafters. Test
-   output will be streamed to your terminal.
+* Python
+* OpenRouter API
+* OpenAI Python SDK
+* JSON-based tool calling
+
+## Current Capabilities
+
+* Inspect files in a project
+* Create and update files
+* Execute shell commands
+* Handle multi-step workflows through an agent loop
+
+## Roadmap
+
+Planned improvements include:
+
+* Search tool
+* File editing tool
+* Project-wide code search
+* Long-term conversation memory
+* Web search integration
+* Better codebase understanding
+* Additional developer-focused tools
+
+## Motivation
+
+This project was built to understand the internals of modern AI agents by implementing the core components from scratch instead of relying on higher-level frameworks. The focus is on learning how LLMs, tool calling, and agent loops work together to create autonomous coding assistants.
