@@ -101,7 +101,36 @@ tools_definition = {
                 "required": ["query", "path"]
             }
         }
-    },        
+    },  
+    "Edit": {
+        "type": "function",
+        "function": {
+            "name": "Edit",
+            "description": "Replace a specific piece of text in a file. Use this for modifying existing files instead of rewriting the entire file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to the file to edit"
+                    },
+                    "old_block": {
+                        "type": "string",
+                        "description": "The exact block of text to replace. The text must match exactly and uniquely within the file"
+                    },
+                    "new_block": {
+                        "type": "string",
+                        "description": "The replacement block of text."
+                    }
+                },
+                "required": [
+                    "file_path",
+                    "old_block",
+                    "new_block"
+                ]
+            }
+        }
+    }      
 }
 
 
@@ -157,6 +186,7 @@ def write_file(messages, args, id):
 def bash(messages, args, id):
     command_args = json.loads(args)
     command = command_args["command"]
+    print("Executing:", command)
     response = {
         "role": "tool",
         "tool_call_id": id,
@@ -221,7 +251,7 @@ def search(messages, args, id):
      response = {
         "role": "tool",
         "tool_call_id": id,
-        "content": [],
+        "content": "",
         }
      
      if not os.path.exists(path):
@@ -260,7 +290,44 @@ def search(messages, args, id):
         response["content"] = combined_result
      else:    
         response["content"]= "No Matches Found"
-     messages.append(response)         
+     messages.append(response)   
+
+
+def edit(messages, args, id):
+     tool_args = json.loads(args)
+     file_path = tool_args["file_path"]
+     old_block = tool_args["old_block"]
+     new_block = tool_args["new_block"]
+     response = {
+        "role": "tool",
+        "tool_call_id": id,
+        "content": "",
+        }
+     try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            cnt = content.count(old_block)
+            if cnt == 1:
+                content = content.replace(old_block,new_block,1)
+                response["content"] = "Edit Successful. Replaced one occurrence"
+                with open(file_path, "w",encoding="utf-8") as f1:
+                     f1.write(content)
+
+            elif cnt == 0:
+                response["content"] = "Edit Failed: Block Not Found"
+
+            else:
+                response["content"] = f"Edit failed: block is not unique. Found {cnt} occurrences."    
+
+     except Exception as e:
+          response["content"] = repr(e)
+
+
+               
+
+                 
+
+     messages.append(response)                    
                
 
 
@@ -271,5 +338,6 @@ tool_handler = {
      "Bash":bash,
      "ListDirectory": listDirectory,
      "Search": search,
+     "Edit": edit
 }
 
