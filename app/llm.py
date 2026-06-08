@@ -1,7 +1,7 @@
 import os
-import sys
 from dotenv import load_dotenv
 from openai import OpenAI
+from constants import MODEL,SYSTEM_PROMPT
 
 load_dotenv()
 
@@ -17,10 +17,15 @@ client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
 def get_chat_response(messages,tools):
 
-
+    messages_for_api = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT
+        }
+    ] + messages
     chat = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages = messages,
+            model=MODEL,
+            messages = messages_for_api,
             tools = tools
     )
 

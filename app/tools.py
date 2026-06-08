@@ -1,5 +1,7 @@
 import json
 import subprocess
+import os
+from constants import MAX_SEARCH_RESULTS
 
 tools_definition = {
     "Read": {
@@ -59,7 +61,47 @@ tools_definition = {
             }
             }
         }
-        }    
+        },
+
+    "ListDirectory": {
+        "type": "function",
+        "function": {
+            "name": "ListDirectory",
+            "description": "List all files and directories in a given directory path",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The directory path whose contents should be listed"
+                    }
+                },
+                "required": ["path"]
+            }
+        }
+    },
+
+    "Search":{
+        "type": "function",
+        "function": {
+            "name": "Search",
+            "description": "Search for a text string inside files under a directory and return matching file paths and line numbers.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The text to search for"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "The directory path to search in"
+                    }
+                },
+                "required": ["query", "path"]
+            }
+        }
+    },        
 }
 
 
@@ -142,12 +184,92 @@ def bash(messages, args, id):
         response["content"] = repr(e)
 
 
-    messages.append(response)        
+    messages.append(response)  
+
+
+def listDirectory(messages, args, id):
+     dir_args = json.loads(args)
+     dir_path = dir_args["path"]
+     dir_contents = []
+     response = {
+        "role": "tool",
+        "tool_call_id": id,
+        "content": [],
+        }      
+
+     try:
+        for entry in os.listdir(dir_path):
+            if os.path.isdir(entry):
+                dir_contents.append(f"[DIR] {entry}")
+            if os.path.isfile(entry):
+                dir_contents.append(f"[FILE] {entry}")  
+
+        response["content"] = dir_contents
+
+     except Exception as e:
+            response["content"] = repr(e)
+
+     messages.append(response)
+
+def search(messages, args, id):
+     
+     tool_args = json.loads(args)
+     search_term = tool_args["query"].lower()
+     path  = tool_args["path"]
+     ignore_dirs = {'.git', '.venv', '__pycache__', 'node_modules', '.idea', 'build', 'dist'}
+     results = []
+     response = {
+        "role": "tool",
+        "tool_call_id": id,
+        "content": [],
+        }
+     
+     if not os.path.exists(path):
+          response["content"] = f"Path does not exist: {path}"
+          messages.append(response)
+          return          
+    #  print("Searching for:", search_term)
+    #  print("Path:", path) 
+     for root, dirs, files in os.walk(path):
+          if len(results) >= MAX_SEARCH_RESULTS:
+               break
+          dirs[:] = [d for d in dirs if d not in ignore_dirs]   
+          for file in files:
+               if len(results) >= MAX_SEARCH_RESULTS:
+                    break
+               file_path = os.path.join(root,file)
+               try:
+                    with open(file_path, "r", errors= "ignore") as f:
+                         content = f.read()
+                         if '\0' in content:
+                              continue
+                         lines = content.splitlines()
+                         for line_num,line in enumerate(lines,1):
+                                if search_term in line.lower():
+                                  results.append(f"{file_path} : {line_num} : {line}")
+                                  if len(results) >= MAX_SEARCH_RESULTS:
+                                       break
+
+                                
+               except Exception:
+                    continue
+    #  print("Matches found:", len(results))          
+     combined_result = "\n".join(results)
+    #  print(f"combined result{combined_result}")
+     if results:
+        response["content"] = combined_result
+     else:    
+        response["content"]= "No Matches Found"
+     messages.append(response)         
+               
+
 
 
 tool_handler = {
      "Read" : read_file,
      "Write": write_file,
      "Bash":bash,
+     "ListDirectory": listDirectory,
+     "Search": search,
 }
 
