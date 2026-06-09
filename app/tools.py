@@ -1,7 +1,9 @@
 import json
 import subprocess
 import os
-from constants import MAX_SEARCH_RESULTS
+from constants import MAX_SEARCH_RESULTS, WORKSPACE_ROOT, IGNORE_DIRS, MAX_DEPTH
+from pathlib import Path
+
 
 tools_definition = {
     "Read": {
@@ -130,6 +132,46 @@ tools_definition = {
                 ]
             }
         }
+    },
+
+    "GetWorkspaceRoot": {
+        "type": "function",
+        "function": {
+            "name": "GetWorkspaceRoot",
+            "description": "Returns the root directory of the current workspace.",
+            "parameters": {
+            "type": "object",
+            "properties": {}
+            }
+        }
+        },
+
+    "Tree": {
+        "type": "function",
+        "function": {
+            "name": "Tree",
+            "description": (
+                "Returns the hierarchical structure of a directory and its "
+                "subdirectories. Use this tool when you need to understand "
+                "project structure, repository layout, file organization, or "
+                "directory hierarchy. Prefer this tool over repeated "
+                "ListDirectory calls when a recursive view is needed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "The root directory whose structure should be displayed."
+                        )
+                    }
+                },
+                "required": [
+                    "path"
+                ]
+            }
+        }
     }      
 }
 
@@ -246,7 +288,6 @@ def search(messages, args, id):
      tool_args = json.loads(args)
      search_term = tool_args["query"].lower()
      path  = tool_args["path"]
-     ignore_dirs = {'.git', '.venv', '__pycache__', 'node_modules', '.idea', 'build', 'dist'}
      results = []
      response = {
         "role": "tool",
@@ -263,7 +304,7 @@ def search(messages, args, id):
      for root, dirs, files in os.walk(path):
           if len(results) >= MAX_SEARCH_RESULTS:
                break
-          dirs[:] = [d for d in dirs if d not in ignore_dirs]   
+          dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]   
           for file in files:
                if len(results) >= MAX_SEARCH_RESULTS:
                     break
@@ -327,7 +368,68 @@ def edit(messages, args, id):
 
                  
 
-     messages.append(response)                    
+     messages.append(response)  
+
+
+def getworkspaceroot(messages, args, id):
+     response = {
+        "role": "tool",
+        "tool_call_id": id,
+        "content": WORKSPACE_ROOT,
+        }
+     messages.append(response)
+
+
+def tree(messages, args, id):
+        dir_args = json.loads(args)
+        dir_path = dir_args["path"]
+        base_path = Path(dir_path).resolve()
+        tree_dict = tree_helper(dir_path, base_path)
+        response = {
+            "role": "tool",
+            "tool_call_id": id,
+            "content": json.dumps(tree_dict, indent=4),
+            }
+        
+        messages.append(response)
+
+
+def tree_helper(current_path, base_path, depth = 0):
+
+     current_path = Path(current_path).resolve()   
+     structure = {
+                "name": current_path.name,
+                "type": "directory" if current_path.is_dir() else "file",
+                "path": str(current_path.relative_to(base_path))
+            }
+     
+     if current_path.is_dir() and depth >= MAX_DEPTH:
+          structure["truncated"] = True
+          return structure
+     
+     if current_path.is_dir():
+          structure["children"] = []
+          try:
+            for entry in current_path.iterdir():
+                entry = entry.resolve()
+                if entry.name in IGNORE_DIRS:
+                        continue
+                if entry.is_dir():
+                    structure["children"].append(tree_helper(entry, base_path ,depth+1))
+
+                else:
+                    structure["children"].append({
+                            "name" : entry.name,
+                            "type": "file",
+                            "path" : str(entry.relative_to(base_path))
+                                })
+          except Exception as e:
+               structure["error"] = repr(e)         
+
+     return structure                     
+
+               
+     
                
 
 
@@ -338,6 +440,8 @@ tool_handler = {
      "Bash":bash,
      "ListDirectory": listDirectory,
      "Search": search,
-     "Edit": edit
+     "Edit": edit,
+     "GetWorkspaceRoot": getworkspaceroot,
+     "Tree" : tree
 }
 

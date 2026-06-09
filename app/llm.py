@@ -26,7 +26,7 @@ def get_chat_response(messages,tools):
     chat = client.chat.completions.create(
             model=MODEL,
             messages = messages_for_api,
-            tools = tools
+            tools = tools,
     )
 
     return chat
