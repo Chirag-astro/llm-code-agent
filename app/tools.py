@@ -3,6 +3,8 @@ import subprocess
 import os
 from constants import MAX_SEARCH_RESULTS, WORKSPACE_ROOT, IGNORE_DIRS, MAX_DEPTH
 from pathlib import Path
+import shutil
+from datetime import datetime
 
 
 tools_definition = {
@@ -10,7 +12,11 @@ tools_definition = {
         "type": "function",
         "function": {
             "name": "Read",
-            "description": "Read and return the contents of a file",
+            "description": (
+                        "Read and return the contents of a file. "
+                        "Use this when detailed file contents are required. "
+                        "Prefer Search first when the file location is unknown."
+                    ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -28,7 +34,9 @@ tools_definition = {
         "type": "function",
         "function": {
             "name": "Write",
-            "description": "Write content to a file",
+            "description": ("Create a new file or replace the entire contents of an existing file. "
+            "Use this when creating a file from scratch, generating a new source file, "
+            "or completely rewriting a file. Prefer Edit when modifying only part of an existing file."),
             "parameters": {
             "type": "object",
             "required": ["file_path", "content"],
@@ -51,7 +59,11 @@ tools_definition = {
         "type": "function",
         "function": {
             "name": "Bash",
-            "description": "Execute a shell command",
+            "description": (
+                    "Execute a shell command and return the exit code, stdout, and stderr. "
+                    "Use this for compilation, testing, running programs, or shell operations "
+                    "that cannot be performed using dedicated tools."
+                ),
             "parameters": {
             "type": "object",
             "required": ["command"],
@@ -87,7 +99,11 @@ tools_definition = {
         "type": "function",
         "function": {
             "name": "Search",
-            "description": "Search for a text string inside files under a directory and return matching file paths and line numbers.",
+            "description": (
+                    "Search for text, identifiers, functions, classes, variables, "
+                    "configuration values, or code references across the workspace. "
+                    "Prefer this tool before Read when locating code."
+                ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -108,7 +124,11 @@ tools_definition = {
         "type": "function",
         "function": {
             "name": "Edit",
-            "description": "Replace a specific piece of text in a file. Use this for modifying existing files instead of rewriting the entire file.",
+            "description": (
+                    "Modify an existing file by replacing a specific block of text. "
+                    "Use this for targeted changes to existing files. "
+                    "Prefer Edit over Write when only part of a file should change."
+                ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -172,7 +192,34 @@ tools_definition = {
                 ]
             }
         }
-    }      
+    },
+
+    # "Undo": {
+    #     "type": "function",
+    #     "function": {
+    #         "name": "Undo",
+    #         "description": (
+    #             "Restore a file from its most recent backup. "
+    #             "Use this tool when the user wants to undo, revert, "
+    #             "or roll back the latest change made to a file."
+    #         ),
+    #         "parameters": {
+    #             "type": "object",
+    #             "properties": {
+    #                 "file_path": {
+    #                     "type": "string",
+    #                     "description": (
+    #                         "Path of the file whose most recent change "
+    #                         "should be undone."
+    #                     )
+    #                 }
+    #             },
+    #             "required": [
+    #                 "file_path"
+    #             ]
+    #         }
+    #     }
+    # },      
 }
 
 
@@ -202,27 +249,42 @@ def read_file(messages,args, id):
 
 
 def write_file(messages, args, id):
-    file_args =  json.loads(args)
+    file_args = json.loads(args)
+
     file_path = file_args["file_path"]
     content = file_args["content"]
+
+    response = {
+        "role": "tool",
+        "tool_call_id": id,
+        "content": ""
+    }
+
     try:
-        with open(file_path, "w") as f:
+        backup_created = False
+
+        if os.path.exists(file_path):
+            create_backup(file_path)
+            backup_created = True
+
+        with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
-            response = {
-                "role": "tool",
-                "tool_call_id": id,
-                "content":  content
-            }
+
+        if backup_created:
+            response["content"] = (
+                "Write successful. Backup created."
+            )
+        else:
+            response["content"] = (
+                "Write successful. New file created."
+            )
 
     except Exception as e:
-            response = {
-                "role": "tool",
-                "tool_call_id": id,
-                "content":  repr(e)
-            }
+        response["content"] = (
+            f"Write failed: {repr(e)}"
+        )
 
     messages.append(response)
-
 
 
 def bash(messages, args, id):
@@ -242,18 +304,34 @@ def bash(messages, args, id):
             shell=True,
             text=True,
             capture_output=True,
+            timeout = 15,
         ) 
 
         
+        output = []
 
         if results.stdout:
-            response["content"] = results.stdout
+            output.append("STDOUT:\n" + results.stdout)
 
         if results.stderr:
-            response["content"] = results.stderr
+            output.append("STDERR:\n" + results.stderr)
+
+        if not output:
+            output_text = "Command completed successfully."
+        else:
+            output_text = "\n\n".join(output) 
+
+        response["content"] = (
+            f"Exit Code: {results.returncode}\n\n"
+            + output_text
+        )
+
+    except subprocess.TimeoutExpired:
+        response["content"] = ("Command timed out after 15 seconds."
+                               "The process may be interactive or long-running.")
 
     except Exception as e:
-        response["content"] = repr(e)
+        response["content"] = f"Command failed: {repr(e)}"
 
 
     messages.append(response)  
@@ -335,40 +413,56 @@ def search(messages, args, id):
 
 
 def edit(messages, args, id):
-     tool_args = json.loads(args)
-     file_path = tool_args["file_path"]
-     old_block = tool_args["old_block"]
-     new_block = tool_args["new_block"]
-     response = {
+    tool_args = json.loads(args)
+
+    file_path = tool_args["file_path"]
+    old_block = tool_args["old_block"]
+    new_block = tool_args["new_block"]
+
+    response = {
         "role": "tool",
         "tool_call_id": id,
-        "content": "",
-        }
-     try:
+        "content": ""
+    }
+
+    try:
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
-            cnt = content.count(old_block)
-            if cnt == 1:
-                content = content.replace(old_block,new_block,1)
-                response["content"] = "Edit Successful. Replaced one occurrence"
-                with open(file_path, "w",encoding="utf-8") as f1:
-                     f1.write(content)
 
-            elif cnt == 0:
-                response["content"] = "Edit Failed: Block Not Found"
+        cnt = content.count(old_block)
 
-            else:
-                response["content"] = f"Edit failed: block is not unique. Found {cnt} occurrences."    
+        if cnt == 0:
+            response["content"] = (
+                "Edit failed: block not found."
+            )
 
-     except Exception as e:
-          response["content"] = repr(e)
+        elif cnt > 1:
+            response["content"] = (
+                f"Edit failed: block is not unique. Found {cnt} occurrences."
+            )
 
+        else:
+            create_backup(file_path)
 
-               
+            updated_content = content.replace(
+                old_block,
+                new_block,
+                1
+            )
 
-                 
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(updated_content)
 
-     messages.append(response)  
+            response["content"] = (
+                "Edit successful. Replaced one occurrence. Backup created."
+            )
+
+    except Exception as e:
+        response["content"] = (
+            f"Edit failed: {repr(e)}"
+        )
+
+    messages.append(response)
 
 
 def getworkspaceroot(messages, args, id):
@@ -426,10 +520,67 @@ def tree_helper(current_path, base_path, depth = 0):
           except Exception as e:
                structure["error"] = repr(e)         
 
-     return structure                     
+     return structure   
 
-               
-     
+
+def create_backup(file_path):
+    file_name = Path(file_path).name
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    backup_path = (
+        Path(WORKSPACE_ROOT)
+        / ".backups"
+        / f"{file_name}.{timestamp}.bak"
+    )
+    backup_path.parent.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+    shutil.copy2(file_path, backup_path)
+
+    return backup_path
+
+# TODO:
+# Undo currently behaves as "restore latest backup".
+# Proper Undo/Redo requires history tracking and version pointers.
+# Revisit in a future milestone.
+# def undo(messages, args, id):
+#     file_args = json.loads(args)
+#     file_path = file_args["file_path"]
+#     file_name = Path(file_path).name
+#     backup_dir = Path(WORKSPACE_ROOT) / ".backups"
+#     search_pattern = f"{file_name}.*.bak"
+#     matches = list(backup_dir.glob(search_pattern))
+
+#     response = {
+#         "role": "tool",
+#         "tool_call_id": id,
+#         "content": "",
+#         }
+
+#     if not matches:
+#         response["content"] = (
+#             f"No backups found for {file_name}"
+#         )
+#         messages.append(response)
+#         return    
+
+#     latest_backup = max(
+#         matches,
+#         key=lambda p: p.stat().st_mtime
+#     )
+
+#     try:
+#         create_backup(file_path)
+#         shutil.copy2(latest_backup, file_path)
+#         response["content"] = f"Success: Restored {file_name} from {latest_backup.name}"
+
+#     except Exception as e:
+#         response["content"]= f"Failed to restore file. Error: {repr(e)}"
+
+
+#     messages.append(response)     
                
 
 
