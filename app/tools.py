@@ -1,7 +1,7 @@
 import json
 import subprocess
 import os
-from constants import MAX_SEARCH_RESULTS, WORKSPACE_ROOT, IGNORE_DIRS, MAX_DEPTH, GIT_ROOT
+from constants import MAX_DIFF_CHARS, MAX_SEARCH_RESULTS, WORKSPACE_ROOT, IGNORE_DIRS, MAX_DEPTH, GIT_ROOT
 from pathlib import Path
 import shutil
 from datetime import datetime
@@ -239,7 +239,32 @@ tools_definition = {
                 "properties": {}
             }
         }
-    },     
+    }, 
+
+    "GitDiff": {
+        "type": "function",
+        "function": {
+            "name": "GitDiff",
+            "description": (
+                "Show the git diff for the repository or for a specific file. "
+                "Returns the exact modifications that have not yet been committed. "
+                "Use this when the user asks what changed, wants to inspect "
+                "modifications, review edits, explain a diff, or see changes "
+                "made to a file."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": (
+                            "Optional. Restrict the diff to a specific file."
+                        )
+                    }
+                }
+            }
+        }
+    },        
 }
 
 
@@ -649,8 +674,60 @@ def git_status(messages, args, id):
 
     messages.append(response)
 
-               
+def git_diff(messages, args, id):
 
+    response = {
+        "role": "tool",
+        "tool_call_id": id,
+        "content": ""
+            }   
+
+    if GIT_ROOT is None:
+        response["content"] = (
+            "No git repository found inside workspace."
+        )
+        messages.append(response)
+        return
+
+    try:
+        results = subprocess.run(
+            ["git", "diff"],
+            cwd=GIT_ROOT,
+            text=True,
+            capture_output=True,
+            timeout=15,
+        )
+
+        output = []
+
+        diff_text = results.stdout
+
+        if diff_text:
+            if len(diff_text) > MAX_DIFF_CHARS:
+                    diff_text = (
+                        diff_text[:MAX_DIFF_CHARS]
+                        + "\n\n[Diff truncated]"
+                    )
+            output.append("STDOUT:\n" + diff_text)        
+
+        if results.stderr:
+            output.append("STDERR:\n" + results.stderr)
+
+        if not output:
+            output_text = "No changes detected."
+        else:
+            output_text = "\n\n".join(output) 
+
+        response["content"] = (
+            f"Exit Code: {results.returncode}\n\n"
+            + output_text
+        )
+
+    except Exception as e:
+        response["content"] =   f"Failed to Execute git diff: {repr(e)}" 
+
+    messages.append(response)        
+     
 
 
 tool_handler = {
@@ -663,5 +740,6 @@ tool_handler = {
      "GetWorkspaceRoot": getworkspaceroot,
      "Tree" : tree,
      "GitStatus": git_status,
+     "GitDiff": git_diff,
 }
 

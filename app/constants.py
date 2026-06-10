@@ -1,4 +1,5 @@
 import os
+from utility import find_git_root
 SYSTEM_PROMPT = """
 You are an autonomous coding assistant operating inside a local project workspace.
 
@@ -105,14 +106,7 @@ IGNORE_DIRS = {'.git', '.venv', '__pycache__', 'node_modules', '.idea', 'build',
 
 MAX_DEPTH = 5
 
-def find_git_root(root):
-
-    for current_root, dirs, files in os.walk(root):
-
-        if ".git" in dirs:
-            return current_root
-
-    return None
-
 GIT_ROOT = find_git_root(WORKSPACE_ROOT)
+
+MAX_DIFF_CHARS = 10000
 
