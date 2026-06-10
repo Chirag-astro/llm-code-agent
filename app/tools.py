@@ -1,7 +1,7 @@
 import json
 import subprocess
 import os
-from constants import MAX_SEARCH_RESULTS, WORKSPACE_ROOT, IGNORE_DIRS, MAX_DEPTH
+from constants import MAX_SEARCH_RESULTS, WORKSPACE_ROOT, IGNORE_DIRS, MAX_DEPTH, GIT_ROOT
 from pathlib import Path
 import shutil
 from datetime import datetime
@@ -219,7 +219,27 @@ tools_definition = {
     #             ]
     #         }
     #     }
-    # },      
+    # },
+    # 
+    "GitStatus": {
+        "type": "function",
+        "function": {
+            "name": "GitStatus",
+            "description": (
+                "Show the current git repository status. "
+                "Returns modified files, staged files, deleted files, "
+                "untracked files, branch information, and whether there "
+                "are uncommitted changes. Use this whenever the user asks "
+                "about repository state, changed files, pending changes, "
+                "working tree status, staged files, branch status, or "
+                "uncommitted work."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },     
 }
 
 
@@ -580,7 +600,55 @@ def create_backup(file_path):
 #         response["content"]= f"Failed to restore file. Error: {repr(e)}"
 
 
-#     messages.append(response)     
+#     messages.append(response)   
+# 
+
+def git_status(messages, args, id):
+    response = {
+        "role": "tool",
+        "tool_call_id": id,
+        "content": ""
+            }
+    
+    if GIT_ROOT is None:
+        response["content"] = (
+            "No git repository found inside workspace."
+        )
+        messages.append(response)
+        return
+    
+    try:
+        results = subprocess.run(
+            ["git","status", "-sb"],
+            cwd= GIT_ROOT,
+            text=True,
+            capture_output=True,
+            timeout= 15
+        )
+
+        output = []
+
+        if results.stdout:
+            output.append("STDOUT:\n" + results.stdout)
+
+        if results.stderr:
+            output.append("STDERR:\n" + results.stderr)
+
+        if not output:
+            output_text = "Working tree clean."
+        else:
+            output_text = "\n\n".join(output) 
+
+        response["content"] = (
+            f"Exit Code: {results.returncode}\n\n"
+            + output_text
+        )
+
+    except Exception as e:
+        response["content"] = f"Failed to Execute Git Status: {repr(e)}"  
+
+    messages.append(response)
+
                
 
 
@@ -593,6 +661,7 @@ tool_handler = {
      "Search": search,
      "Edit": edit,
      "GetWorkspaceRoot": getworkspaceroot,
-     "Tree" : tree
+     "Tree" : tree,
+     "GitStatus": git_status,
 }
 

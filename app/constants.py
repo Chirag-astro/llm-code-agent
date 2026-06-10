@@ -1,5 +1,4 @@
 import os
-
 SYSTEM_PROMPT = """
 You are an autonomous coding assistant operating inside a local project workspace.
 
@@ -94,7 +93,7 @@ Your goal is to solve tasks efficiently, safely, and with minimal unnecessary ac
 When you have enough information to answer the user's request, stop making tool calls and provide the answer.
 """
 
-MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
+MODEL = "openai/gpt-oss-120b:free"
 
 MAX_SEARCH_RESULTS =50
 
@@ -102,6 +101,18 @@ MAX_STEPS = 20
 
 WORKSPACE_ROOT = os.getcwd()
 
-IGNORE_DIRS = {'.git', '.venv', '__pycache__', 'node_modules', '.idea', 'build', 'dist'}
+IGNORE_DIRS = {'.git', '.venv', '__pycache__', 'node_modules', '.idea', 'build', 'dist', '.backups', '.vscode'}
 
 MAX_DEPTH = 5
+
+def find_git_root(root):
+
+    for current_root, dirs, files in os.walk(root):
+
+        if ".git" in dirs:
+            return current_root
+
+    return None
+
+GIT_ROOT = find_git_root(WORKSPACE_ROOT)
+
