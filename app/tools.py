@@ -264,7 +264,50 @@ tools_definition = {
                 }
             }
         }
-    },        
+    },
+
+    "GitCommit": {
+        "type": "function",
+        "function": {
+            "name": "GitCommit",
+            "description": (
+                "Create a git commit. "
+                "Before using this tool, verify any code changes when practical. "
+                "If compilation, tests, or verification fail, fix the issues before committing. "
+                "By default all modified, staged, "
+                "deleted, and untracked files are committed. "
+                "Optionally commit only a specific set of files. "
+                "Use this when the user asks to commit changes, create "
+                "a commit, save work in git, or record modifications "
+                "in the repository."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": (
+                            "The commit message to use."
+                        )
+                    },
+                    "files": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": (
+                            "Optional list of files to commit. "
+                            "If omitted or empty, all repository "
+                            "changes will be committed."
+                        )
+                    }
+                },
+                "required": [
+                    "message"
+                ]
+            }
+        }
+    },            
 }
 
 
@@ -681,6 +724,15 @@ def git_diff(messages, args, id):
         "tool_call_id": id,
         "content": ""
             }   
+    
+    tool_args = json.loads(args)
+
+    file_path = tool_args.get("file_path")
+
+    cmd = ["git", "diff"]
+
+    if file_path:
+        cmd.extend(["--", file_path])    
 
     if GIT_ROOT is None:
         response["content"] = (
@@ -691,7 +743,7 @@ def git_diff(messages, args, id):
 
     try:
         results = subprocess.run(
-            ["git", "diff"],
+            cmd,
             cwd=GIT_ROOT,
             text=True,
             capture_output=True,
@@ -726,7 +778,103 @@ def git_diff(messages, args, id):
     except Exception as e:
         response["content"] =   f"Failed to Execute git diff: {repr(e)}" 
 
-    messages.append(response)        
+    messages.append(response)  
+
+def git_commit(messages, args, id):
+
+    response = {
+        "role": "tool",
+        "tool_call_id": id,
+        "content": ""
+    }
+
+    if GIT_ROOT is None:
+        response["content"] = (
+            "No git repository found inside workspace."
+        )
+        messages.append(response)
+        return
+
+    try:
+        tool_args = json.loads(args)
+
+        file_list = tool_args.get("files", [])
+        commit_message = tool_args["message"]
+
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=GIT_ROOT,
+            text=True,
+            capture_output=True,
+            timeout=15,
+        )
+
+        if not status.stdout.strip():
+            response["content"] = (
+                "Nothing to commit. Working tree clean."
+            )
+            messages.append(response)
+            return
+
+        if file_list:
+            add_cmd = ["git", "add"] + file_list
+        else:
+            add_cmd = ["git", "add", "-A"]
+
+        add_result = subprocess.run(
+            add_cmd,
+            cwd=GIT_ROOT,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
+
+        if add_result.returncode != 0:
+            response["content"] = (
+                f"git add failed.\n\n"
+                f"Exit Code: {add_result.returncode}\n\n"
+                f"{add_result.stderr}"
+            )
+            messages.append(response)
+            return
+
+        commit_result = subprocess.run(
+            ["git", "commit", "-m", commit_message],
+            cwd=GIT_ROOT,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
+
+        output = []
+
+        if commit_result.stdout:
+            output.append(
+                "STDOUT:\n" + commit_result.stdout
+            )
+
+        if commit_result.stderr:
+            output.append(
+                "STDERR:\n" + commit_result.stderr
+            )
+
+        output_text = (
+            "\n\n".join(output)
+            if output
+            else "Commit completed successfully."
+        )
+
+        response["content"] = (
+            f"Exit Code: {commit_result.returncode}\n\n"
+            + output_text
+        )
+
+    except Exception as e:
+        response["content"] = (
+            f"Failed to execute git commit: {repr(e)}"
+        )
+
+    messages.append(response)
      
 
 
@@ -741,5 +889,6 @@ tool_handler = {
      "Tree" : tree,
      "GitStatus": git_status,
      "GitDiff": git_diff,
+     "GitCommit": git_commit,
 }
 
